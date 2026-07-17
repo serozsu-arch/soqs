@@ -472,11 +472,26 @@ def fetch_tefas_history(
     client = session or requests.Session()
     client.headers.update(
         {
-            "User-Agent": "Mozilla/5.0 (compatible; SOQS/2.1; fund-research)",
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+            ),
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Origin": "https://www.tefas.gov.tr",
             "Referer": "https://www.tefas.gov.tr/TarihselVeriler.aspx",
             "X-Requested-With": "XMLHttpRequest",
         }
     )
+    # WAF çerezlerini almak için önce sayfayı normal bir tarayıcı gibi ziyaret et
+    for warmup_url in (
+        "https://www.tefas.gov.tr/TarihselVeriler.aspx",
+        "https://www.tefas.gov.tr/BesTarihselVeriler.aspx",
+    ):
+        try:
+            client.get(warmup_url, timeout=timeout)
+        except requests.RequestException:
+            pass
 
     frames: list[pd.DataFrame] = []
     failed_batches: list[tuple[tuple[str, ...], str]] = []
