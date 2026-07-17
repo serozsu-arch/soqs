@@ -479,6 +479,7 @@ def fetch_tefas_history(
     )
 
     frames: list[pd.DataFrame] = []
+    failed_batches: list[tuple[tuple[str, ...], str]] = []
     try:
         # TEFAS accepts a comma-separated code list. Smaller batches are more reliable.
         batch_size = 25
@@ -491,9 +492,16 @@ def fetch_tefas_history(
                 "fonkod": ",".join(batch),
             }
             last_error: Exception | None = None
+            referers = (
+                "https://www.tefas.gov.tr/TarihselVeriler.aspx",
+                "https://www.tefas.gov.tr/BesTarihselVeriler.aspx",
+            )
+            if fund_type.upper() == "EMK":
+                referers = tuple(reversed(referers))
             for attempt in range(1, attempts + 1):
                 try:
-                    response = client.post(TEFAS_HISTORY_URL, data=form, timeout=timeout)
+                    headers = {"Referer": referers[(attempt - 1) % len(referers)]}
+                    response = client.post(TEFAS_HISTORY_URL, data=form, headers=headers, timeout=timeout)
                     response.raise_for_status()
                     rows = _extract_rows(response.json())
                     frame = _normalize_tefas_rows(rows)
@@ -507,9 +515,8 @@ def fetch_tefas_history(
                     if attempt < attempts:
                         time.sleep(pause_seconds * attempt)
             if last_error is not None:
-                raise RuntimeError(
-                    f"TEFAS download failed for {','.join(batch)} after {attempts} attempts: {last_error}"
-                ) from last_error
+                # Bu grup indirilemedi; uygulamayı düşürme, eksikler listesinde raporlanacak.
+                failed_batches.append((tuple(batch), str(last_error)))
             if offset + batch_size < len(normalized_codes):
                 time.sleep(pause_seconds)
     finally:
@@ -659,6 +666,11 @@ def update_prices(start: date, end: date, codes_filter: list[str] | None, status
     if missing:
         ok_msg += f" ⚠️ Veri gelmeyen kodlar: {', '.join(missing)}"
     status.success(ok_msg)
+    if missing:
+        status.warning(
+            "Eksik kodlar için TEFAS isteği başarısız olmuş olabilir (ör. BES fonlarında geçici 404). "
+            "İnen verilerle skorlamaya devam edebilirsiniz; eksikler için daha sonra tekrar deneyin."
+        )
 
 
 def run_scoring(risk_free: float) -> tuple[pd.DataFrame, dict]:
